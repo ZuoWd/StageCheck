@@ -1,0 +1,63 @@
+workflows:
+  ios-native-quick-start:
+    name: StageCheck
+
+    max_build_duration: 120
+
+    instance_type: mac_mini_m2
+
+    integrations:
+      # 必须与 Codemagic Team settings 里 App Store Connect API Key 的名称一致
+      app_store_connect: StageCheck
+
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.StageCheck.cn
+
+      vars:
+        # 项目没有使用 CocoaPods，直接使用 .xcodeproj（不存在 .xcworkspace）
+        XCODE_PROJECT: "StageCheck/StageCheck.xcodeproj"
+        XCODE_SCHEME: "StageCheck"
+        APP_STORE_APPLE_ID: 6838846719
+
+      # 项目 objectVersion = 110，需要 Xcode 27 及以上
+      xcode: latest
+
+    scripts:
+      - name: Set up provisioning profiles settings on Xcode project
+        script: |
+          xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT"
+
+      - name: Increment build number
+        script: |
+          cd "$CM_BUILD_DIR/StageCheck"
+          # 首次上传时 App Store Connect 里还没有 build，回退为 0
+          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" || echo 0)
+          agvtool new-version -all $((LATEST_BUILD_NUMBER + 1))
+
+      - name: Build ipa for distribution
+        script: |
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
+    publishing:
+      email:
+        recipients:
+          - 985446278@qq.com
+        notify:
+          success: true
+          failure: true
+
+      app_store_connect:
+        auth: integration
+        # 只上传 ipa 到 App Store Connect / TestFlight，不自动提交任何审核
+        submit_to_testflight: false
+        submit_to_app_store: false
